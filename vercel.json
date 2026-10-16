@@ -1,0 +1,13 @@
+{
+  "installCommand": "node scripts/copy-config.js",
+  "functions": {
+    "api/index.go": {
+      "includeFiles": "config.yaml"
+    }
+  },
+  "rewrites": [
+    { "source": "/.well-known/lnurlp/:user", "destination": "/api/index?lnzap_route=metadata&lnzap_user=:user" },
+    { "source": "/lnurlp/:user/callback", "destination": "/api/index?lnzap_route=callback&lnzap_user=:user" },
+    { "source": "/healthz", "destination": "/api/index?lnzap_route=health" }
+  ]
+}

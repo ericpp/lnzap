@@ -1,0 +1,14 @@
+listen: ":8080"
+public_url: "https://zap.example.com" # used to build the proxied callback URL
+relays: ["wss://relay.damus.io", "wss://nos.lol"]
+cache_ttl: 5m
+signed_zap: forward # forward, comment, or replace a wallet-signed zap request
+splitkit_host: "https://curiohoster.com" # Socket.IO and /api/sk host
+splitkit_wait: 3s # how long a serverless lookup waits for remoteValue
+splitkit_cache_ttl: 15s # how long a warm instance reuses that block
+users:
+  alice:
+    upstream: "alice@getalby.com"
+    pubkey: "" # optional recipient pubkey (hex or npub) for the zap "p" tag
+    event_guid: "303fe7e4-32c1-4f67-977d-967f251cb6b0" # optional Split Kit event to follow
+    zap_target: "" # optional note, nevent, naddr, or hex event id
