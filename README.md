@@ -1,24 +1,56 @@
 # lnzap
 
-`lnzap` is a lightning address proxy. It answers [LUD-16](https://github.com/lnurl/luds/blob/luds/16.md) pay requests for configured usernames, forwards them to each user's real LNURL server, and rewrites the callback so invoice requests come back through the proxy.
+**TL;DR:** A lightning address proxy. `alice@zap.example.com` → `alice@getalby.com`, but every zap gets tagged with nostr + podcast info on the way through.
 
-When a wallet asks for an invoice without a [NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md) zap request, the proxy builds a kind 9734 event, signs it with the service nostr key, and adds it to the upstream request. `signed_zap` decides what happens when the wallet already sent one.
+---
 
-If the user is tied to a [Split Kit](https://www.thesplitkit.com) event, the proxy follows that event's Socket.IO `remoteValue` stream and stamps the current show onto zap requests it creates: NIP-73 `i`/`k` tags for the podcast and episode, plus `eventGuid`, `blockGuid`, `title`, and `eventAPI`.
+## Quick start (5 minutes)
 
-The proxy requires the upstream to advertise `allowsNostr`. If it does not, the pay request and the invoice callback both return an error.
+1. **Copy the config**
 
-`signed_zap` controls a zap request the wallet already signed. `forward` (the default) sends it upstream unchanged. `comment` sends it unchanged and appends a short show line to the comment, cut to fit `commentAllowed`. Some upstreams ignore `comment` once a zap request is present. `replace` checks the wallet's signature and substitutes a service-signed request: the wallet's message stays the content, its `e` and `a` tags are copied, and its pubkey is stored as `senderPubkey`. The receipt then credits the service key.
+   ```sh
+   cp config.example.yaml config.yaml
+   ```
 
-`zap_target` attaches a nostr note or addressable event to zap requests this service signs. A `note`, `nevent`, or hex event id becomes an `e` tag, and an `naddr` becomes an `a` tag. In `replace` mode the wallet's `e` and `a` tags are kept, and `zap_target` is used only when the wallet sent none. `forward` and `comment` send a wallet-signed request unchanged, so the target is not added.
+2. **Add a user** in `config.yaml`:
 
-The invoice callback also accepts `blockGuid`, `senderName`, and `clientId`. `blockGuid` selects that Split Kit block, falling back to the current one when it does not match. `senderName` supplies the payer name when `payerdata` has none. `clientId` is stored as a tag on zap requests this service creates. None of the three is forwarded upstream.
+   ```yaml
+   public_url: "https://zap.example.com"
+   users:
+     alice:
+       upstream: "alice@getalby.com"
+   ```
 
-The proxy asks for the payer's name with [LUD-18](https://github.com/lnurl/luds/blob/luds/18.md) `payerData`. If the upstream already requests a name, that spec is left as-is. Wallets that support it send `payerdata` on the invoice callback, and the proxy records the name as a `payerName` tag on zap requests it creates. `payerdata` is forwarded upstream only when that server already accepts it.
+3. **Set your nostr key** (64 hex chars or `nsec1...`):
 
-## Configure
+   ```sh
+   export NOSTR_PRIVATE_KEY="nsec1..."
+   ```
 
-Copy `config.example.yaml` to `config.yaml`.
+4. **Run it** (Go 1.24+):
+
+   ```sh
+   go run ./cmd/lnzap -config config.yaml
+   ```
+
+5. **Check it's alive:** `GET /healthz` → `{"status":"ok"}`
+
+Done. Everything below is reference. Skim the headers, read what you need.
+
+---
+
+## What it does
+
+- Answers [LUD-16](https://github.com/lnurl/luds/blob/luds/16.md) pay requests for your configured usernames.
+- Forwards them to each user's real LNURL server.
+- Rewrites the callback so invoice requests come back through the proxy.
+- If the wallet didn't send a [NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md) zap request, the proxy **builds one** (kind 9734), signs it with the service key, and adds it.
+
+> **Gotcha:** the upstream **must** advertise `allowsNostr`. If it doesn't, both the pay request and the invoice callback return an error.
+
+---
+
+## Full config
 
 ```yaml
 listen: ":8080"
@@ -35,46 +67,117 @@ users:
     zap_target: ""      # optional note, nevent, naddr, or hex event id
 ```
 
-`alice@zap.example.com` then proxies to `alice@getalby.com`. Usernames are matched without case sensitivity.
+- Usernames are **not** case sensitive.
+- If `public_url` is empty and `VERCEL_PROJECT_PRODUCTION_URL` is set, that host is used.
 
-Set the signing key in the environment. It accepts 64 hex characters or an `nsec` bech32 secret:
+### Where it looks for the config
 
-```sh
-export NOSTR_PRIVATE_KEY="nsec1..."
-```
+In order:
 
-The config path is `-config` or `LNZAP_CONFIG`. It defaults to `config.yaml` in the working directory, or that same file in a parent directory. `vercel dev` runs the function from a temporary directory, so the parent search picks up the project `config.yaml`. A deployed function embeds `api/config.yaml`, which the build copies from `config.yaml`. If `public_url` is empty and `VERCEL_PROJECT_PRODUCTION_URL` is set, that host is used.
+1. `-config` flag
+2. `LNZAP_CONFIG` env var
+3. `config.yaml` in the working directory
+4. `config.yaml` in a parent directory (this is why `vercel dev` works from its temp directory)
 
-## Run
+---
 
-Go 1.24 or later:
+## `signed_zap`: what to do when the wallet already signed a zap request
 
-```sh
-go run ./cmd/lnzap -config config.yaml
-```
+| Value | What happens |
+| --- | --- |
+| `forward` (default) | Sent upstream unchanged. |
+| `comment` | Sent unchanged, plus a short show line appended to the comment (trimmed to `commentAllowed`). |
+| `replace` | Wallet's signature is checked, then swapped for a service-signed request. |
 
-Endpoints:
+**`comment` heads-up:** some upstreams ignore `comment` once a zap request is present.
 
-- `GET /.well-known/lnurlp/{user}` returns the upstream pay request with `callback` pointed at this service. `metadata` is left unchanged.
-- `GET /lnurlp/{user}/callback` checks the amount, adds or adjusts the zap request, and returns the upstream invoice response.
-- `GET /healthz` returns `{"status":"ok"}`.
+**`replace` details:**
 
-LNURL responses send `Access-Control-Allow-Origin: *`.
+- Wallet's message becomes the content.
+- Wallet's `e` and `a` tags are copied.
+- Wallet's pubkey is stored as `senderPubkey`.
+- The receipt credits the **service** key, not the wallet.
 
-The long-running server keeps a Socket.IO connection open for each `event_guid`. On Vercel each invoice request connects, takes the current `remoteValue`, and disconnects. `splitkit_wait` is how long that lookup waits before using the first block from getblocks, and `splitkit_cache_ttl` is how long a warm instance reuses it.
+---
+
+## `zap_target`: point zaps at a nostr note
+
+Only applies to zap requests **this service signs**.
+
+- `note`, `nevent`, or hex event id → `e` tag
+- `naddr` → `a` tag
+
+By mode:
+
+- **`replace`:** wallet's `e`/`a` tags win. `zap_target` is used only if the wallet sent none.
+- **`forward` / `comment`:** the wallet's request goes through untouched, so no target is added.
+
+---
+
+## Split Kit (podcast info)
+
+Set `event_guid` on a user to tie them to a [Split Kit](https://www.thesplitkit.com) event.
+
+The proxy follows the event's Socket.IO `remoteValue` stream and stamps the **current show** onto zap requests it creates:
+
+- NIP-73 `i` / `k` tags for the podcast and episode
+- `eventGuid`, `blockGuid`, `title`, `eventAPI`
+
+**Long-running server vs. Vercel:**
+
+- **Server:** keeps one Socket.IO connection open per `event_guid`.
+- **Vercel:** each invoice request connects, grabs the current `remoteValue`, disconnects.
+  - `splitkit_wait`: how long to wait before falling back to the first block from getblocks.
+  - `splitkit_cache_ttl`: how long a warm instance reuses the result.
+
+---
+
+## Payer name ([LUD-18](https://github.com/lnurl/luds/blob/luds/18.md))
+
+- The proxy asks for the payer's name via `payerData`.
+- Upstream already asks for a name? Its spec is left alone.
+- The name gets saved as a `payerName` tag on zap requests this service creates.
+- `payerdata` is forwarded upstream **only** if that server already accepts it.
+
+---
+
+## Endpoints
+
+| Endpoint | Does |
+| --- | --- |
+| `GET /.well-known/lnurlp/{user}` | Upstream pay request, `callback` pointed here. `metadata` unchanged. |
+| `GET /lnurlp/{user}/callback` | Checks amount, adds/adjusts the zap request, returns upstream invoice. |
+| `GET /healthz` | `{"status":"ok"}` |
+
+All LNURL responses send `Access-Control-Allow-Origin: *`.
+
+### Extra callback params
+
+None of these are forwarded upstream.
+
+- **`blockGuid`:** pick a specific Split Kit block. Falls back to the current one if it doesn't match.
+- **`senderName`:** payer name, used when `payerdata` has none.
+- **`clientId`:** stored as a tag on zap requests this service creates.
+
+---
 
 ## Deploy to Vercel
 
-`config.yaml` is uploaded with the project. The build copies it to `api/config.yaml`, and the Go function embeds that file. `config.yaml` is not listed in `.vercelignore`.
+Checklist:
 
-Set `NOSTR_PRIVATE_KEY` in the project environment. It is the hex or `nsec` service key. Redeploy after changing the key or `config.yaml`.
+- [ ] `config.yaml` is in the project (it's **not** in `.vercelignore`, so it uploads).
+- [ ] `NOSTR_PRIVATE_KEY` is set in the project environment (hex or `nsec`).
+- [ ] Run:
 
-`LNZAP_CONFIG_YAML`, when the function can see it, replaces the embedded file.
+  ```sh
+  vercel deploy
+  ```
 
-From the repo:
+> **Don't forget:** redeploy after changing the key or `config.yaml`.
 
-```sh
-vercel deploy
-```
+How it works, if you care:
 
-`vercel dev` runs the same function locally. `vercel.json` rewrites `/.well-known/lnurlp/:user`, `/lnurlp/:user/callback`, and `/healthz` onto the Go function.
+- The build copies `config.yaml` → `api/config.yaml`, and the Go function embeds it.
+- `LNZAP_CONFIG_YAML`, if the function can see it, replaces the embedded file.
+- `vercel.json` rewrites `/.well-known/lnurlp/:user`, `/lnurlp/:user/callback`, and `/healthz` onto the Go function.
+- `vercel dev` runs the same function locally.
