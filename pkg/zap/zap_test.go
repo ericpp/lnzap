@@ -65,6 +65,9 @@ func TestBuildZapRequest(t *testing.T) {
 	if tag(ev, "payerName") != nil {
 		t.Fatal("unexpected payerName tag")
 	}
+	if got := tagValue(ev, "client"); got != clientName {
+		t.Fatalf("client %s", got)
+	}
 }
 
 func TestBuildZapRequestBlockTags(t *testing.T) {

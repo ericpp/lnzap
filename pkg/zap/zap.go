@@ -12,6 +12,9 @@ import (
 	"lnzap/pkg/splitkit"
 )
 
+// clientName is the Nostr client tag on zap requests this service signs.
+const clientName = "lnzap"
+
 // ParsePrivateKey accepts a hex secret or nsec bech32 string.
 func ParsePrivateKey(s string) (string, error) {
 	return nostrkey.ParsePrivateKey(s)
@@ -61,6 +64,7 @@ func BuildZapRequest(opts Options) (nostr.Event, error) {
 		{"amount", opts.AmountMsat},
 		relaysTag,
 		{"lnurl", opts.LNURL},
+		{"client", clientName},
 	}
 	if opts.PayerName != "" {
 		tags = append(tags, nostr.Tag{"payerName", opts.PayerName})
