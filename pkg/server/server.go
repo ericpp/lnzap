@@ -115,7 +115,8 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request, username strin
 		writeError(w, http.StatusBadGateway, "upstream lnurl lookup failed")
 		return
 	}
-	if !params.AllowsNostr {
+	passthrough := rssPaymentComment(r.URL.Query().Get("comment"))
+	if !passthrough && !params.AllowsNostr {
 		slog.Warn("lnurl nostr", "user", name, "reason", "upstream does not support nostr zaps")
 		writeError(w, http.StatusBadGateway, "upstream does not support nostr zaps")
 		return
@@ -148,9 +149,13 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request, username strin
 	if len(params.PayerData) == 0 {
 		incoming.Del("payerdata")
 	}
-	injected, ok := s.applyZap(w, r, name, user, params, msat, payer, blockGUID, clientID, incoming)
-	if !ok {
-		return
+	var injected string
+	if !passthrough {
+		var ok bool
+		injected, ok = s.applyZap(w, r, name, user, params, msat, payer, blockGUID, clientID, incoming)
+		if !ok {
+			return
+		}
 	}
 
 	target, err := mergeQuery(params.Callback, incoming, injected)
@@ -209,6 +214,14 @@ func (s *Server) applyZap(w http.ResponseWriter, r *http.Request, name string, u
 	default:
 		return "", true
 	}
+}
+
+const rssPaymentMarker = "rss::payment::"
+
+// rssPaymentComment reports a Podcasting 2.0 payment carried in the lightning comment.
+// Those payments are forwarded unchanged and never turned into a zap request.
+func rssPaymentComment(comment string) bool {
+	return strings.Contains(comment, rssPaymentMarker)
 }
 
 func (s *Server) signedZapMode() string {

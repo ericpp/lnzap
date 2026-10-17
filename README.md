@@ -45,6 +45,7 @@ Done. Everything below is reference. Skim the headers, read what you need.
 - Forwards them to each user's real LNURL server.
 - Rewrites the callback so invoice requests come back through the proxy.
 - If the wallet didn't send a [NIP-57](https://github.com/nostr-protocol/nips/blob/master/57.md) zap request, the proxy **builds one** (kind 9734), signs it with the service key, and adds it. The request includes a `client` tag, `lnzap`. `replace` does the same.
+- A comment that contains `rss::payment::` is left alone. No zap is built or rewritten, and the invoice request is forwarded as received.
 
 > **Gotcha:** the upstream **must** advertise `allowsNostr`. If it doesn't, both the pay request and the invoice callback return an error.
 

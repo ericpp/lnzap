@@ -298,6 +298,91 @@ func TestKeepsUpstreamPayerName(t *testing.T) {
 	}
 }
 
+func TestRSSPaymentSkipsZap(t *testing.T) {
+	comment := "rss::payment::feed-guid::item-guid::100"
+	h, up, _ := newProxy(t, true, recipientKey(t), showBlocks())
+	q := url.Values{}
+	q.Set("amount", "1000")
+	q.Set("comment", comment)
+	q.Set("foo", "bar")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lnurlp/alice/callback?"+q.Encode(), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	got, amount, gotComment, foo, _ := up.snapshot()
+	if got != "" {
+		t.Fatalf("constructed zap %s", got)
+	}
+	if amount != "1000" || gotComment != comment || foo != "bar" {
+		t.Fatalf("amount=%s comment=%s foo=%s", amount, gotComment, foo)
+	}
+}
+
+func TestRSSPaymentSkipsSignedZapComment(t *testing.T) {
+	comment := "thanks rss::payment::feed::item"
+	supplied := `{"id":"payer","kind":9734}`
+	h, up, _ := newProxySetup(t, true, "", showBlocks(), proxySetup{signedZap: config.SignedZapComment})
+	q := url.Values{}
+	q.Set("amount", "1000")
+	q.Set("comment", comment)
+	q.Set("nostr", supplied)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lnurlp/alice/callback?"+q.Encode(), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	got, _, gotComment, _, _ := up.snapshot()
+	if got != supplied {
+		t.Fatalf("nostr %s", got)
+	}
+	if gotComment != comment {
+		t.Fatalf("comment %q", gotComment)
+	}
+}
+
+func TestRSSPaymentSkipsSignedZapReplace(t *testing.T) {
+	raw, _ := signedZap(t, "from wallet", nostr.Tags{{"e", "evt1"}})
+	comment := "rss::payment::feed::item"
+	h, up, _ := newProxySetup(t, true, recipientKey(t), showBlocks(), proxySetup{signedZap: config.SignedZapReplace})
+	q := url.Values{}
+	q.Set("amount", "1000")
+	q.Set("comment", comment)
+	q.Set("nostr", raw)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lnurlp/alice/callback?"+q.Encode(), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	got, _, gotComment, _, _ := up.snapshot()
+	if got != raw {
+		t.Fatal("wallet zap was rewritten")
+	}
+	if gotComment != comment {
+		t.Fatalf("comment %q", gotComment)
+	}
+}
+
+func TestRSSPaymentPassesThroughWithoutNostr(t *testing.T) {
+	comment := "rss::payment::feed::item"
+	h, up, _ := newProxy(t, false, "", fakeBlocks{})
+	q := url.Values{}
+	q.Set("amount", "1000")
+	q.Set("comment", comment)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lnurlp/alice/callback?"+q.Encode(), nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+	}
+	got, _, gotComment, _, _ := up.snapshot()
+	if got != "" {
+		t.Fatalf("constructed zap %s", got)
+	}
+	if gotComment != comment {
+		t.Fatalf("comment %q", gotComment)
+	}
+}
+
 func TestPassesThroughNostrParam(t *testing.T) {
 	supplied := `{"id":"payer","kind":9734}`
 	h, up, _ := newProxy(t, true, "", fakeBlocks{ok: true, block: splitkit.Block{Title: "Live", BlockGUID: "b", FeedGUID: "feed"}})
