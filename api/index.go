@@ -1,11 +1,12 @@
 package handler
 
 import (
-	_ "embed"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 
 	"lnzap/pkg/config"
@@ -14,9 +15,6 @@ import (
 	"lnzap/pkg/splitkit"
 	"lnzap/pkg/zap"
 )
-
-//go:embed config.yaml
-var embeddedConfig []byte
 
 var (
 	setupOnce          sync.Once
@@ -48,14 +46,15 @@ func Handler(w http.ResponseWriter, r *http.Request) {
 }
 
 func load() {
-	cfg, err := config.LoadFromEnv()
+	yamlText := strings.TrimSpace(os.Getenv("LNZAP_CONFIG_YAML"))
+	if yamlText == "" {
+		setupErr = fmt.Errorf("LNZAP_CONFIG_YAML is not set")
+		return
+	}
+	cfg, err := config.Parse([]byte(yamlText))
 	if err != nil {
-		embedded, embedErr := config.Parse(embeddedConfig)
-		if embedErr != nil {
-			setupErr = err
-			return
-		}
-		cfg = embedded
+		setupErr = err
+		return
 	}
 	privateKey, err := zap.ParsePrivateKey(os.Getenv("NOSTR_PRIVATE_KEY"))
 	if err != nil {

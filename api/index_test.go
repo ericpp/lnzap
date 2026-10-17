@@ -9,19 +9,7 @@ import (
 	"testing"
 
 	"github.com/nbd-wtf/go-nostr"
-
-	"lnzap/pkg/config"
 )
-
-func TestEmbeddedConfig(t *testing.T) {
-	cfg, err := config.Parse(embeddedConfig)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cfg.Users) == 0 {
-		t.Fatal("embedded config has no users")
-	}
-}
 
 func TestHandlerRoutes(t *testing.T) {
 	var got url.Values
@@ -56,7 +44,6 @@ func TestHandlerRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	host := up.Listener.Addr().String()
-	t.Setenv("LNZAP_CONFIG", "")
 	t.Setenv("LNZAP_CONFIG_YAML", `
 public_url: "https://zap.example.com"
 relays: ["wss://relay.example.com"]

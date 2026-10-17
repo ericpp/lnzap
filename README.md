@@ -72,12 +72,14 @@ users:
 
 ### Where it looks for the config
 
-In order:
+The long-running server, in order:
 
 1. `-config` flag
 2. `LNZAP_CONFIG` env var
 3. `config.yaml` in the working directory
-4. `config.yaml` in a parent directory (this is why `vercel dev` works from its temp directory)
+4. `config.yaml` in a parent directory
+
+On Vercel the function reads `LNZAP_CONFIG_YAML` only.
 
 ---
 
@@ -165,7 +167,7 @@ None of these are forwarded upstream.
 
 Checklist:
 
-- [ ] `config.yaml` is in the project (it's **not** in `.vercelignore`, so it uploads).
+- [ ] `LNZAP_CONFIG_YAML` is the YAML config (same shape as `config.yaml`).
 - [ ] `NOSTR_PRIVATE_KEY` is set in the project environment (hex or `nsec`).
 - [ ] Run:
 
@@ -173,11 +175,10 @@ Checklist:
   vercel deploy
   ```
 
-> **Don't forget:** redeploy after changing the key or `config.yaml`.
+> **Don't forget:** redeploy after changing the key or `LNZAP_CONFIG_YAML`.
 
 How it works, if you care:
 
-- The build copies `config.yaml` → `api/config.yaml`, and the Go function embeds it.
-- `LNZAP_CONFIG_YAML`, if the function can see it, replaces the embedded file.
+- The Go function reads its config from `LNZAP_CONFIG_YAML`.
 - `vercel.json` rewrites `/.well-known/lnurlp/:user`, `/lnurlp/:user/callback`, and `/healthz` onto the Go function.
-- `vercel dev` runs the same function locally.
+- `vercel dev` runs the same function locally. Set `LNZAP_CONFIG_YAML` there too.

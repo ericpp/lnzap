@@ -84,9 +84,7 @@ func Load(path string) (*Config, error) {
 
 // LoadFromEnv reads YAML from LNZAP_CONFIG_YAML when that variable is set.
 // Otherwise it reads the file named by LNZAP_CONFIG, then config.yaml.
-// A relative config.yaml is also taken from a parent directory. vercel dev
-// runs the function from a temporary directory under the project, so that
-// search finds the project config.yaml.
+// A relative config.yaml is also taken from a parent directory.
 func LoadFromEnv() (*Config, error) {
 	if yamlText := strings.TrimSpace(os.Getenv("LNZAP_CONFIG_YAML")); yamlText != "" {
 		return parse([]byte(yamlText))
