@@ -115,7 +115,7 @@ func (s *Server) Callback(w http.ResponseWriter, r *http.Request, username strin
 		writeError(w, http.StatusBadGateway, "upstream lnurl lookup failed")
 		return
 	}
-	passthrough := rssPaymentComment(r.URL.Query().Get("comment"))
+	passthrough := passthroughComment(r.URL.Query().Get("comment"))
 	if !passthrough && !params.AllowsNostr {
 		slog.Warn("lnurl nostr", "user", name, "reason", "upstream does not support nostr zaps")
 		writeError(w, http.StatusBadGateway, "upstream does not support nostr zaps")
@@ -216,12 +216,22 @@ func (s *Server) applyZap(w http.ResponseWriter, r *http.Request, name string, u
 	}
 }
 
-const rssPaymentMarker = "rss::payment::"
+var passthroughMarkers = []string{
+	"rss::payment::",
+	"V4V: https://boost.podcastguru.io/",
+	"payment::stream",
+	"payment::boost",
+}
 
-// rssPaymentComment reports a Podcasting 2.0 payment carried in the lightning comment.
+// passthroughComment reports a value-for-value payment carried in the lightning comment.
 // Those payments are forwarded unchanged and never turned into a zap request.
-func rssPaymentComment(comment string) bool {
-	return strings.Contains(comment, rssPaymentMarker)
+func passthroughComment(comment string) bool {
+	for _, marker := range passthroughMarkers {
+		if strings.Contains(comment, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) signedZapMode() string {

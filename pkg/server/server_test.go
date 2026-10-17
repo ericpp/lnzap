@@ -363,6 +363,34 @@ func TestRSSPaymentSkipsSignedZapReplace(t *testing.T) {
 	}
 }
 
+func TestV4VPaymentSkipsZap(t *testing.T) {
+	comments := []string{
+		"V4V: https://boost.podcastguru.io/boost/we3Jw3QS payment::stream",
+		"V4V: https://boost.podcastguru.io/boost/we3Jw3QS payment::boost",
+		"V4V: https://boost.podcastguru.io/boost/we3Jw3QS",
+	}
+	for _, comment := range comments {
+		t.Run(comment, func(t *testing.T) {
+			h, up, _ := newProxy(t, true, recipientKey(t), showBlocks())
+			q := url.Values{}
+			q.Set("amount", "1000")
+			q.Set("comment", comment)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/lnurlp/alice/callback?"+q.Encode(), nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status %d body %s", rec.Code, rec.Body.String())
+			}
+			got, _, gotComment, _, _ := up.snapshot()
+			if got != "" {
+				t.Fatalf("constructed zap %s", got)
+			}
+			if gotComment != comment {
+				t.Fatalf("comment %q", gotComment)
+			}
+		})
+	}
+}
+
 func TestRSSPaymentPassesThroughWithoutNostr(t *testing.T) {
 	comment := "rss::payment::feed::item"
 	h, up, _ := newProxy(t, false, "", fakeBlocks{})
